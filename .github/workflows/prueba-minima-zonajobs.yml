@@ -1,0 +1,48 @@
+name: Prueba mínima ZonaJobs
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Cuatro veces por hora, apartado del minuto 0 para reducir demoras.
+    - cron: '7,22,37,52 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prueba-minima-zonajobs
+  cancel-in-progress: false
+
+jobs:
+  buscar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: batch-runner
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Recuperar navegador descargado
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-22.10.0-${{ runner.os }}
+
+      - name: Instalar navegador y dependencias
+        run: npm install --omit=dev --no-audit --no-fund
+
+      - name: Ejecutar pruebas de seguridad
+        run: npm test
+
+      - name: Procesar hasta dos trabajos
+        run: npm start
+        env:
+          APPS_SCRIPT_WEBAPP_URL: ${{ secrets.APPS_SCRIPT_WEBAPP_URL }}
+          ZONAJOBS_BATCH_TOKEN: ${{ secrets.ZONAJOBS_BATCH_TOKEN }}
