@@ -4,7 +4,7 @@ const puppeteer = require('puppeteer');
 const { validarURLZonaJobs } = require('./lib/seguridad');
 
 const API_URL = process.env.APPS_SCRIPT_WEBAPP_URL || '';
-const TOKEN = process.env.GITHUB_BATCH_TOKEN || '';
+const TOKEN = process.env.ZONAJOBS_BATCH_TOKEN || '';
 const PATRON_AVISO_ZONAJOBS = /\/empleos\/[a-z0-9-]+-\d+\.html?/i;
 
 function validarEntorno() {
@@ -12,7 +12,7 @@ function validarEntorno() {
     throw new Error('APPS_SCRIPT_WEBAPP_URL no parece una URL /exec válida de Apps Script.');
   }
   if (TOKEN.length < 32) {
-    throw new Error('GITHUB_BATCH_TOKEN falta o es demasiado corto.');
+    throw new Error('ZONAJOBS_BATCH_TOKEN falta o es demasiado corto.');
   }
 }
 
