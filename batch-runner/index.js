@@ -5,6 +5,8 @@ const { PATRON_AVISO_ZONAJOBS, validarURLZonaJobs } = require('./lib/seguridad')
 
 const API_URL = process.env.APPS_SCRIPT_WEBAPP_URL || '';
 const TOKEN = process.env.ZONAJOBS_BATCH_TOKEN || '';
+const CONCURRENCIA = 3;
+const MAX_TRABAJOS_POR_CORRIDA = 200;
 
 function validarEntorno() {
   if (!API_URL.startsWith('https://script.google.com/macros/s/') || !API_URL.endsWith('/exec')) {
@@ -72,7 +74,9 @@ async function renderizarTrabajo(navegador, trabajo) {
       throw new Error(`ZonaJobs respondió HTTP ${httpStatus}.`);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    // La red ya quedó inactiva; esta pausa breve permite terminar el pintado
+    // de las tarjetas sin demorar artificialmente cada página.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     const html = await pagina.content();
     const urlFinal = pagina.url();
     validarURLZonaJobs(urlFinal);
@@ -156,51 +160,68 @@ async function renderizarTrabajo(navegador, trabajo) {
 
 async function ejecutar() {
   validarEntorno();
-  const reserva = await llamarApi('reservar');
-  const trabajos = Array.isArray(reserva.trabajos) ? reserva.trabajos : [];
-
-  if (trabajos.length === 0) {
-    console.log(reserva.completa
-      ? 'Prueba completa: no quedan trabajos pendientes.'
-      : 'No hay trabajos disponibles en esta ejecución.');
-    return;
-  }
-
-  console.log(`Trabajos reservados: ${trabajos.length}.`);
-  const navegador = await puppeteer.launch({
-    headless: 'new',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu'
-    ]
-  });
-
+  const inicio = await llamarApi('iniciar');
+  console.log(`Ciclo: ${inicio.modo || 'sin modo'}${inicio.preparada ? ' (cola preparada)' : ''}.`);
+  let navegador = null;
   let huboErrorDeEntrega = false;
+  let totalProcesados = 0;
   try {
-    for (const trabajo of trabajos) {
-      let respuesta;
-      try {
-        respuesta = await renderizarTrabajo(navegador, trabajo);
-        console.log(`${trabajo.termino} p.${trabajo.pagina}: ${respuesta.cantidadAvisos} avisos.`);
-      } catch (error) {
-        respuesta = {
-          ok: false,
-          error: String(error && error.message ? error.message : error)
-        };
-        console.error(`${trabajo.termino} p.${trabajo.pagina}: ${respuesta.error}`);
+    while (!huboErrorDeEntrega) {
+      const reserva = await llamarApi('reservar');
+      const trabajos = Array.isArray(reserva.trabajos) ? reserva.trabajos : [];
+      if (trabajos.length === 0) {
+        console.log(reserva.completa
+          ? `Ciclo completo. Páginas procesadas por esta corrida: ${totalProcesados}.`
+          : 'No hay trabajos disponibles; la cola puede estar pausada o reservada por otra corrida.');
+        break;
       }
 
-      try {
-        await llamarApi('resultado', { id: trabajo.id, respuesta });
-      } catch (errorEntrega) {
-        huboErrorDeEntrega = true;
-        console.error(`No se pudo entregar el resultado ${trabajo.id}: ${errorEntrega.message}`);
+      if (!navegador) {
+        navegador = await puppeteer.launch({
+          headless: 'new',
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+          ]
+        });
+      }
+
+      for (let posicion = 0; posicion < trabajos.length; posicion += CONCURRENCIA) {
+        const grupo = trabajos.slice(posicion, posicion + CONCURRENCIA);
+        const resultados = await Promise.all(grupo.map(async (trabajo) => {
+          try {
+            const respuesta = await renderizarTrabajo(navegador, trabajo);
+            console.log(`${trabajo.modo} | ${trabajo.termino} p.${trabajo.pagina}: ${respuesta.cantidadAvisos} avisos.`);
+            return { trabajo, respuesta };
+          } catch (error) {
+            const respuesta = { ok: false, error: String(error && error.message ? error.message : error) };
+            console.error(`${trabajo.modo} | ${trabajo.termino} p.${trabajo.pagina}: ${respuesta.error}`);
+            return { trabajo, respuesta };
+          }
+        }));
+
+        // Las entregas se hacen de a una para no superar la escritura segura
+        // de Google Sheets. La navegación, que es lo lento, ya fue paralela.
+        for (const item of resultados) {
+          try {
+            await llamarApi('resultado', { id: item.trabajo.id, respuesta: item.respuesta });
+            totalProcesados++;
+          } catch (errorEntrega) {
+            huboErrorDeEntrega = true;
+            console.error(`No se pudo entregar el resultado ${item.trabajo.id}: ${errorEntrega.message}`);
+            break;
+          }
+        }
+        if (huboErrorDeEntrega) break;
+        if (totalProcesados >= MAX_TRABAJOS_POR_CORRIDA) {
+          throw new Error(`Límite de seguridad alcanzado: ${MAX_TRABAJOS_POR_CORRIDA} trabajos.`);
+        }
       }
     }
   } finally {
-    await navegador.close().catch(() => {});
+    if (navegador) await navegador.close().catch(() => {});
   }
 
   if (huboErrorDeEntrega) process.exitCode = 1;
@@ -210,4 +231,3 @@ ejecutar().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exitCode = 1;
 });
-
