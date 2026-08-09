@@ -2,7 +2,7 @@
   "name": "agente-empleos-batch-runner",
   "version": "0.1.0",
   "private": true,
-  "description": "Runner efímero de la prueba mínima de ZonaJobs para GitHub Actions.",
+  "description": "Runner efímero de carga histórica y actualizaciones de ZonaJobs para GitHub Actions.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
