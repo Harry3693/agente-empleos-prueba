@@ -1,22 +1,22 @@
-name: Prueba mínima ZonaJobs
+name: Agente de empleos ZonaJobs
 
 on:
   workflow_dispatch:
   schedule:
-    # Cuatro veces por hora, apartado del minuto 0 para reducir demoras.
-    - cron: '7,22,37,52 * * * *'
+    # Una actualización por hora, sin depender de que la PC esté encendida.
+    - cron: '17 * * * *'
 
 permissions:
   contents: read
 
 concurrency:
-  group: prueba-minima-zonajobs
+  group: agente-empleos-zonajobs
   cancel-in-progress: false
 
 jobs:
   buscar:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: batch-runner
@@ -41,7 +41,7 @@ jobs:
       - name: Ejecutar pruebas de seguridad
         run: npm test
 
-      - name: Procesar hasta dos trabajos
+      - name: Procesar la cola completa
         run: npm start
         env:
           APPS_SCRIPT_WEBAPP_URL: ${{ secrets.APPS_SCRIPT_WEBAPP_URL }}
