@@ -99,6 +99,11 @@ async function renderizarTrabajo(navegador, trabajo) {
         if (vistos[urlAviso]) return;
         vistos[urlAviso] = true;
 
+        const titulo = (ancla.innerText || ancla.textContent || '')
+          .split('\n')
+          .map((linea) => linea.trim())
+          .find((linea) => linea.length > 0) || '';
+
         let nodo = ancla;
         let contexto = ancla.innerText || '';
         for (let nivel = 0; nivel < 5; nivel++) {
@@ -108,7 +113,11 @@ async function renderizarTrabajo(navegador, trabajo) {
           if (texto.length > contexto.length) contexto = texto;
           if (texto.length > 600) break;
         }
-        resultado.push({ url: urlAviso, contexto: contexto.substring(0, 1500) });
+        resultado.push({
+          url: urlAviso,
+          titulo,
+          contexto: contexto.substring(0, 1500)
+        });
       });
       return resultado;
     }, PATRON_AVISO_ZONAJOBS.source);
