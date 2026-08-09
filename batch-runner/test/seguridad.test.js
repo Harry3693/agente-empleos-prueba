@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validarURLZonaJobs } = require('../lib/seguridad');
+const { PATRON_AVISO_ZONAJOBS, validarURLZonaJobs } = require('../lib/seguridad');
 
 test('acepta páginas de búsqueda válidas de ZonaJobs', () => {
   assert.equal(
@@ -13,6 +13,18 @@ test('acepta páginas de búsqueda válidas de ZonaJobs', () => {
     validarURLZonaJobs('https://www.zonajobs.com.ar/empleos-busqueda-gerente-comercial.html?page=5'),
     'https://www.zonajobs.com.ar/empleos-busqueda-gerente-comercial.html?page=5'
   );
+});
+
+test('acepta avisos reales aunque el slug contenga puntos u otros caracteres', () => {
+  assert.equal(
+    PATRON_AVISO_ZONAJOBS.test('/empleos/gerente-de-operaciones-desarrollo-empresariales-s.a-2187623.html'),
+    true
+  );
+  assert.equal(
+    PATRON_AVISO_ZONAJOBS.test('/empleos/gerente-comercial-omnicanal-|-grupo-de-marcas-2186743.html'),
+    true
+  );
+  assert.equal(PATRON_AVISO_ZONAJOBS.test('/empleos-busqueda-gerente-comercial.html'), false);
 });
 
 test('rechaza HTTP, otros dominios, puertos y rutas ajenas', () => {
@@ -34,3 +46,4 @@ test('rechaza HTTP, otros dominios, puertos y rutas ajenas', () => {
   ];
   prohibidas.forEach((url) => assert.throws(() => validarURLZonaJobs(url)));
 });
+
