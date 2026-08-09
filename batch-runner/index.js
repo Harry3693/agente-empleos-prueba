@@ -110,21 +110,18 @@ async function renderizarTrabajo(navegador, trabajo) {
         const detalles = Array.from(ancla.querySelectorAll('h3'))
           .map(texto)
           .filter((linea) => linea.length > 0);
-        const fechaTexto = detalles.find((linea) => /^(publicado|actualizado)/i.test(linea)) || '';
-        const campos = detalles.filter((linea) => linea !== fechaTexto);
+        const fechaVisible = detalles.find((linea) => /^(publicado|actualizado)/i.test(linea)) || '';
+        const fechaExacta = ancla.querySelector('time[datetime]')?.getAttribute('datetime') || '';
+        const fechaTexto = fechaExacta || fechaVisible;
+        const campos = detalles.filter((linea) => linea !== fechaVisible);
         const empresa = campos[0] || '';
         const ubicacion = campos[1] || '';
         const modalidad = campos[2] || '';
 
-        let nodo = ancla;
-        let contexto = ancla.innerText || '';
-        for (let nivel = 0; nivel < 5; nivel++) {
-          if (!nodo.parentElement) break;
-          nodo = nodo.parentElement;
-          const texto = nodo.innerText || '';
-          if (texto.length > contexto.length) contexto = texto;
-          if (texto.length > 600) break;
-        }
+        // El contexto queda limitado al enlace/tarjeta actual. Subir a
+        // contenedores padres puede mezclar texto de avisos vecinos y alterar
+        // el puntaje, las coincidencias y el alcance.
+        const contexto = ancla.innerText || ancla.textContent || '';
         resultado.push({
           url: urlAviso,
           titulo,
@@ -165,14 +162,44 @@ async function ejecutar() {
   let navegador = null;
   let huboErrorDeEntrega = false;
   let totalProcesados = 0;
+  let resumenFinalCola = null;
+  const metricas = {
+    extraidos: 0,
+    despuesDeFecha: 0,
+    nuevos: 0,
+    duplicadosExactos: 0,
+    posiblesDuplicados: 0,
+    erroresRender: 0,
+    reintentosPendientes: 0,
+    fallidas: 0
+  };
   try {
     while (!huboErrorDeEntrega) {
       const reserva = await llamarApi('reservar');
+      resumenFinalCola = reserva.resumen || resumenFinalCola;
       const trabajos = Array.isArray(reserva.trabajos) ? reserva.trabajos : [];
       if (trabajos.length === 0) {
-        console.log(reserva.completa
-          ? `Ciclo completo. Páginas procesadas por esta corrida: ${totalProcesados}.`
-          : 'No hay trabajos disponibles; la cola puede estar pausada o reservada por otra corrida.');
+        if (reserva.completa) {
+          console.log(`Ciclo completo. Páginas procesadas por esta corrida: ${totalProcesados}.`);
+          console.log(
+            `Avisos: extraídos=${metricas.extraidos}, después de fecha=${metricas.despuesDeFecha}, ` +
+            `nuevos=${metricas.nuevos}, duplicados exactos=${metricas.duplicadosExactos}, ` +
+            `posibles duplicados=${metricas.posiblesDuplicados}.`
+          );
+          console.log(
+            `Incidencias: errores de navegador=${metricas.erroresRender}, ` +
+            `reintentos pendientes=${metricas.reintentosPendientes}, fallidas=${metricas.fallidas}.`
+          );
+          if (resumenFinalCola) {
+            console.log(
+              `Estado final de cola: total=${resumenFinalCola.total}, pendientes=${resumenFinalCola.pendiente}, ` +
+              `reservadas=${resumenFinalCola.reservada}, completadas=${resumenFinalCola.completada}, ` +
+              `fallidas=${resumenFinalCola.fallida}.`
+            );
+          }
+        } else {
+          console.log('No hay trabajos disponibles; la cola puede estar pausada o reservada por otra corrida.');
+        }
         break;
       }
 
@@ -196,6 +223,7 @@ async function ejecutar() {
             console.log(`${trabajo.modo} | ${trabajo.termino} p.${trabajo.pagina}: ${respuesta.cantidadAvisos} avisos.`);
             return { trabajo, respuesta };
           } catch (error) {
+            metricas.erroresRender++;
             const respuesta = { ok: false, error: String(error && error.message ? error.message : error) };
             console.error(`${trabajo.modo} | ${trabajo.termino} p.${trabajo.pagina}: ${respuesta.error}`);
             return { trabajo, respuesta };
@@ -206,8 +234,19 @@ async function ejecutar() {
         // de Google Sheets. La navegación, que es lo lento, ya fue paralela.
         for (const item of resultados) {
           try {
-            await llamarApi('resultado', { id: item.trabajo.id, respuesta: item.respuesta });
+            const confirmacion = await llamarApi('resultado', { id: item.trabajo.id, respuesta: item.respuesta });
             totalProcesados++;
+            if (confirmacion.resultado) {
+              metricas.extraidos += Number(confirmacion.resultado.extraidos) || 0;
+              metricas.despuesDeFecha += Number(confirmacion.resultado.despuesDeFecha) || 0;
+              metricas.nuevos += Number(confirmacion.resultado.nuevos) || 0;
+              metricas.duplicadosExactos += Number(confirmacion.resultado.duplicados) || 0;
+              metricas.posiblesDuplicados += Number(confirmacion.resultado.posiblesDuplicados) || 0;
+            } else if (confirmacion.estado === 'FALLIDA') {
+              metricas.fallidas++;
+            } else if (confirmacion.estado === 'PENDIENTE') {
+              metricas.reintentosPendientes++;
+            }
           } catch (errorEntrega) {
             huboErrorDeEntrega = true;
             console.error(`No se pudo entregar el resultado ${item.trabajo.id}: ${errorEntrega.message}`);
