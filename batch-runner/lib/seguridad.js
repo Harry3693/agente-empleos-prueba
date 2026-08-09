@@ -1,6 +1,10 @@
 'use strict';
 
 const HOST_PERMITIDO = 'www.zonajobs.com.ar';
+// El slug real de un aviso puede contener puntos y otros caracteres
+// visibles en ZonaJobs (por ejemplo, una empresa terminada en "S.A").
+// La parte estable del contrato es /empleos/{slug}-{id}.html.
+const PATRON_AVISO_ZONAJOBS = /^\/empleos\/[^\/?#]+-\d+\.html?$/i;
 
 /**
  * La prueba sólo puede abrir búsquedas HTTPS del dominio exacto de ZonaJobs.
@@ -37,4 +41,5 @@ function validarURLZonaJobs(valor) {
   return url.toString();
 }
 
-module.exports = { HOST_PERMITIDO, validarURLZonaJobs };
+module.exports = { HOST_PERMITIDO, PATRON_AVISO_ZONAJOBS, validarURLZonaJobs };
+
