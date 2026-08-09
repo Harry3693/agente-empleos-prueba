@@ -1,11 +1,10 @@
 'use strict';
 
 const puppeteer = require('puppeteer');
-const { validarURLZonaJobs } = require('./lib/seguridad');
+const { PATRON_AVISO_ZONAJOBS, validarURLZonaJobs } = require('./lib/seguridad');
 
 const API_URL = process.env.APPS_SCRIPT_WEBAPP_URL || '';
 const TOKEN = process.env.ZONAJOBS_BATCH_TOKEN || '';
-const PATRON_AVISO_ZONAJOBS = /\/empleos\/[a-z0-9-]+-\d+\.html?/i;
 
 function validarEntorno() {
   if (!API_URL.startsWith('https://script.google.com/macros/s/') || !API_URL.endsWith('/exec')) {
@@ -86,12 +85,12 @@ async function renderizarTrabajo(navegador, trabajo) {
 
       anclas.forEach((ancla) => {
         const href = ancla.getAttribute('href') || '';
-        if (!patron.test(href)) return;
 
         let urlAviso;
         try {
           const candidata = new URL(href, location.origin);
           if (candidata.protocol !== 'https:' || candidata.hostname !== location.hostname) return;
+          if (!patron.test(candidata.pathname)) return;
           urlAviso = candidata.toString();
         } catch (_error) {
           return;
@@ -99,10 +98,19 @@ async function renderizarTrabajo(navegador, trabajo) {
         if (vistos[urlAviso]) return;
         vistos[urlAviso] = true;
 
-        const titulo = (ancla.innerText || ancla.textContent || '')
+        const texto = (elemento) => (elemento && (elemento.innerText || elemento.textContent) || '').trim();
+        const titulo = texto(ancla.querySelector('h2')) || (ancla.innerText || ancla.textContent || '')
           .split('\n')
           .map((linea) => linea.trim())
-          .find((linea) => linea.length > 0) || '';
+          .find((linea) => linea.length > 0 && !/^(publicado|actualizado)/i.test(linea)) || '';
+        const detalles = Array.from(ancla.querySelectorAll('h3'))
+          .map(texto)
+          .filter((linea) => linea.length > 0);
+        const fechaTexto = detalles.find((linea) => /^(publicado|actualizado)/i.test(linea)) || '';
+        const campos = detalles.filter((linea) => linea !== fechaTexto);
+        const empresa = campos[0] || '';
+        const ubicacion = campos[1] || '';
+        const modalidad = campos[2] || '';
 
         let nodo = ancla;
         let contexto = ancla.innerText || '';
@@ -116,6 +124,10 @@ async function renderizarTrabajo(navegador, trabajo) {
         resultado.push({
           url: urlAviso,
           titulo,
+          empresa,
+          ubicacion,
+          modalidad,
+          fechaTexto,
           contexto: contexto.substring(0, 1500)
         });
       });
@@ -198,3 +210,4 @@ ejecutar().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exitCode = 1;
 });
+
