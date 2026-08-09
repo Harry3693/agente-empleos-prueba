@@ -18,8 +18,20 @@ function validarURLZonaJobs(valor) {
   if (url.hostname !== HOST_PERMITIDO) throw new Error('Dominio no permitido.');
   if (url.port) throw new Error('No se permiten puertos personalizados.');
   if (url.username || url.password) throw new Error('No se permiten credenciales en la URL.');
-  if (!/^\/empleos-busqueda-[a-z0-9-]+(?:-pagina-\d+)?\.html$/.test(url.pathname)) {
+  if (!/^\/empleos-busqueda-[a-z0-9-]+\.html$/.test(url.pathname)) {
     throw new Error('Ruta de búsqueda no permitida.');
+  }
+  if (/-pagina-\d+\.html$/.test(url.pathname)) {
+    throw new Error('El formato antiguo -pagina-N.html no está permitido.');
+  }
+  if (url.hash) throw new Error('No se permiten fragmentos en la URL.');
+
+  const parametros = Array.from(url.searchParams.keys());
+  if (parametros.length > 0) {
+    const paginas = url.searchParams.getAll('page');
+    if (parametros.length !== 1 || parametros[0] !== 'page' || paginas.length !== 1 || !/^[2-9]\d*$/.test(paginas[0])) {
+      throw new Error('La URL sólo admite el parámetro page con un entero mayor o igual a 2.');
+    }
   }
 
   return url.toString();
